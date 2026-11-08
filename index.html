@@ -142,6 +142,11 @@ const SUPABASE_KEY='sb_publishable_v0S0uRqNp_M0NMlcSKQCFg_K5YcoYI0';
  
 document.body.insertAdjacentHTML('afterbegin','<p>メインJavaScript開始</p>');
 
+if (!window.supabase) {
+ document.body.insertAdjacentHTML('afterbegin','<p>Supabaseが読み込まれていない</p>');
+} else {
+ document.body.insertAdjacentHTML('afterbegin','<p>Supabase読み込みOK</p>');
+}
 const supabase=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
 alert('Supabase初期化OK');
