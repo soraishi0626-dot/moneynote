@@ -1,77 +1,493 @@
-<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#142b4a"><meta name="description" content="現金・PayPay・キャンパスペイ・銀行口座をまとめて管理"><link rel="manifest" href="manifest.json"><link rel="icon" href="icon-192.png"><title>MoneyNote</title>
-<style>
-*{box-sizing:border-box}body{margin:0;background:#f3f6fa;color:#1d2939;font-family:system-ui,sans-serif}header{background:#142b4a;color:white;padding:24px 18px}header,main{max-width:760px;margin:auto}main{padding:18px 14px 45px}.brand{font-size:13px;letter-spacing:.12em}.muted,label{color:#718096;font-size:12px}.total{font-size:32px;font-weight:750;margin-top:5px}.title{font-weight:750;margin:22px 2px 12px}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.card,.panel{background:white;border:1px solid #e3e9f0;border-radius:15px;padding:15px}.balance{font-size:20px;font-weight:750;margin-top:7px}.panel{padding:16px}.tabs,.row{display:flex;gap:8px}.tabs button,.secondary{flex:1;padding:10px;border:1px solid #e3e9f0;border-radius:10px;background:#f7f9fc;color:#142b4a;font-weight:700}.tabs .active,.primary{background:#142b4a;color:white}.hidden{display:none}label{display:block;margin:12px 0 5px}input,select{width:100%;padding:12px;border:1px solid #d7e0ea;border-radius:10px;background:white;font:inherit}.row>div{flex:1;min-width:0}.primary{width:100%;padding:13px;border:0;border-radius:10px;margin-top:16px;font:inherit;font-weight:700}.item{display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid #e3e9f0}.desc{flex:1;min-width:0}.meta{font-size:12px;color:#718096;margin-top:4px}.amt{font-weight:700;white-space:nowrap}.in{color:#16835d}.out{color:#c04b50}.empty{text-align:center;color:#718096;padding:22px}.note{font-size:11px;color:#718096;margin-top:12px;line-height:1.5}@media(min-width:600px){.grid{grid-template-columns:repeat(4,1fr)}}
-</style></head><body><header><div class="brand">MONEYNOTE</div><div class="muted" style="color:#cbd5e1;margin-top:18px">総資産</div><div class="total" id="total">¥0</div></header><main>
-<div class="title">残高</div><div class="grid" id="accounts"></div>
-<div class="title">記録する</div><section class="panel"><div class="tabs"><button class="active" data-mode="expense">支出</button><button data-mode="income">収入</button><button data-mode="transfer">振替</button></div>
-<div id="normal"><div class="row"><div><label>金額（円）</label><input id="amount" type="number" min="1" inputmode="numeric" placeholder="例：500"></div><div><label>口座</label><select id="account"></select></div></div><label>カテゴリ</label><select id="category"></select><label>メモ（任意）</label><input id="memo" maxlength="60" placeholder="例：昼ごはん"></div>
-<div id="transfer" class="hidden"><label>金額（円）</label><input id="tamount" type="number" min="1" inputmode="numeric" placeholder="例：1000"><div class="row"><div><label>移動元</label><select id="from"></select></div><div><label>移動先</label><select id="to"></select></div></div><label>メモ（任意）</label><input id="tmemo" maxlength="60"></div><button class="primary" id="save">記録する</button><div class="note">データはこのブラウザ内に保存されます。銀行口座との自動連携はありません。</div></section>
-<div class="title">残高を設定</div><section class="panel"><div class="row"><div><label>口座</label><select id="setAccount"></select></div><div><label>現在の残高（円）</label><input id="setBalance" type="number" min="0" inputmode="numeric" placeholder="例：12000"></div></div><button class="primary" id="set">残高を保存</button></section>
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#142b4a">
+<meta name="description" content="現金・PayPay・キャンパスペイ・銀行口座をまとめて管理">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<title>MoneyNote</title>
 
-<div class="title">バックアップ・復元</div><section class="panel">
-  <div class="note" style="margin-top:0">残高と取引履歴をファイルに保存できます。機種変更やブラウザのデータ削除に備えて、定期的に保存してね。</div>
-  <button class="primary" id="backup" type="button">バックアップを保存</button>
-  <label for="restoreFile">バックアップファイルから復元</label>
-  <input id="restoreFile" type="file" accept=".json,application/json">
-  <button class="secondary" id="restore" type="button" style="width:100%;margin-top:12px">選択したファイルを復元</button>
-  <div class="note">復元すると、現在の残高と履歴はバックアップの内容に置き換わります。復元前に現在のデータもバックアップしてね。</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.105.0"></script>
+
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f3f6fa;color:#1d2939;font-family:system-ui,sans-serif}
+header,main{max-width:760px;margin:auto}
+header{background:#142b4a;color:white;padding:24px 18px}
+main{padding:18px 14px 45px}
+body:not(.logged-in)>header,body:not(.logged-in)>main{display:none}
+body.logged-in #auth{display:none}
+#auth{max-width:420px;margin:30px auto;padding:20px;background:white;border:1px solid #e3e9f0;border-radius:15px}
+.brand{font-size:13px;letter-spacing:.12em}
+.muted,label{color:#718096;font-size:12px}
+.total{font-size:32px;font-weight:750;margin-top:5px}
+.title{font-weight:750;margin:22px 2px 12px}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.card,.panel{background:white;border:1px solid #e3e9f0;border-radius:15px;padding:15px}
+.balance{font-size:20px;font-weight:750;margin-top:7px}
+.panel{padding:16px}
+.tabs,.row{display:flex;gap:8px}
+.tabs button,.secondary{flex:1;padding:10px;border:1px solid #e3e9f0;border-radius:10px;background:#f7f9fc;color:#142b4a;font-weight:700}
+.tabs .active,.primary{background:#142b4a;color:white}
+.hidden{display:none}
+label{display:block;margin:12px 0 5px}
+input,select{width:100%;padding:12px;border:1px solid #d7e0ea;border-radius:10px;background:white;font:inherit}
+.row>div{flex:1;min-width:0}
+.primary{width:100%;padding:13px;border:0;border-radius:10px;margin-top:16px;font:inherit;font-weight:700}
+.item{display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid #e3e9f0}
+.desc{flex:1;min-width:0}
+.meta{font-size:12px;color:#718096;margin-top:4px}
+.amt{font-weight:700;white-space:nowrap}
+.in{color:#16835d}
+.out{color:#c04b50}
+.empty{text-align:center;color:#718096;padding:22px}
+.note{font-size:11px;color:#718096;margin-top:12px;line-height:1.5}
+#syncStatus{font-size:11px;color:#cbd5e1;margin-top:8px}
+.logout{background:transparent;color:white;border:1px solid #8090a5;border-radius:8px;padding:7px 12px;margin-top:12px}
+@media(min-width:600px){.grid{grid-template-columns:repeat(4,1fr)}}
+</style>
+</head>
+
+<body>
+
+<div id="auth">
+<h2>MoneyNote ログイン</h2>
+<p>メールアドレスとパスワードでログイン</p>
+<label>メールアドレス</label>
+<input id="email" type="email" placeholder="メールアドレス">
+<label>パスワード</label>
+<input id="password" type="password" placeholder="パスワード">
+<button id="login" class="primary">ログイン</button>
+<button id="signup" class="secondary" style="width:100%;margin-top:10px">新規登録</button>
+<p id="authMessage" class="note"></p>
+</div>
+
+<header>
+<div class="brand">MONEYNOTE</div>
+<div class="muted" style="color:#cbd5e1;margin-top:18px">総資産</div>
+<div class="total" id="total">¥0</div>
+<div id="syncStatus">同期状態を確認中</div>
+<button id="logout" class="logout">ログアウト</button>
+</header>
+
+<main>
+<div class="title">残高</div>
+<div class="grid" id="accounts"></div>
+
+<div class="title">記録する</div>
+<section class="panel">
+<div class="tabs">
+<button class="active" data-mode="expense">支出</button>
+<button data-mode="income">収入</button>
+<button data-mode="transfer">振替</button>
+</div>
+
+<div id="normal">
+<div class="row">
+<div><label>金額（円）</label><input id="amount" type="number" min="1" inputmode="numeric" placeholder="例：500"></div>
+<div><label>口座</label><select id="account"></select></div>
+</div>
+<label>カテゴリ</label>
+<select id="category"></select>
+<label>メモ（任意）</label>
+<input id="memo" maxlength="60" placeholder="例：昼ごはん">
+</div>
+
+<div id="transfer" class="hidden">
+<label>金額（円）</label>
+<input id="tamount" type="number" min="1" inputmode="numeric" placeholder="例：1000">
+<div class="row">
+<div><label>移動元</label><select id="from"></select></div>
+<div><label>移動先</label><select id="to"></select></div>
+</div>
+<label>メモ（任意）</label>
+<input id="tmemo" maxlength="60">
+</div>
+
+<button class="primary" id="save">記録する</button>
+<div class="note">データはログイン中のアカウントに保存されます。銀行口座との自動連携はありません。</div>
 </section>
-<div class="title">取引履歴</div><section class="panel"><div id="history"></div><button class="secondary" id="reset" style="width:100%;margin-top:12px">すべてのデータをリセット</button></section></main>
+
+<div class="title">残高を設定</div>
+<section class="panel">
+<div class="row">
+<div><label>口座</label><select id="setAccount"></select></div>
+<div><label>現在の残高（円）</label><input id="setBalance" type="number" min="0" inputmode="numeric" placeholder="例：12000"></div>
+</div>
+<button class="primary" id="set">残高を保存</button>
+</section>
+
+<div class="title">バックアップ・復元</div>
+<section class="panel">
+<div class="note" style="margin-top:0">残高と取引履歴をファイルに保存できます。定期的にバックアップしてね。</div>
+<button class="primary" id="backup" type="button">バックアップを保存</button>
+<label for="restoreFile">バックアップファイルから復元</label>
+<input id="restoreFile" type="file" accept=".json,application/json">
+<button class="secondary" id="restore" type="button" style="width:100%;margin-top:12px">選択したファイルを復元</button>
+<div class="note">復元すると現在のデータは置き換わります。復元前にバックアップしてね。</div>
+</section>
+
+<div class="title">取引履歴</div>
+<section class="panel">
+<div id="history"></div>
+<button class="secondary" id="reset" style="width:100%;margin-top:12px">すべてのデータをリセット</button>
+</section>
+</main>
+
 <script>
-const names=['現金','PayPay','キャンパスペイ','銀行口座'],cats=['食費','交通費','買い物','娯楽','学費・教材','その他'],key='moneynote_v3';
-let d;try{d=JSON.parse(localStorage.getItem(key))}catch(e){}if(!d||!d.balances)d={balances:{},items:[]};names.forEach(n=>{if(typeof d.balances[n]!=='number')d.balances[n]=0});if(!Array.isArray(d.items))d.items=[];
-const $=id=>document.getElementById(id),money=n=>'¥'+Math.round(n).toLocaleString('ja-JP'),safe=s=>String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function options(id,arr){$(id).innerHTML=arr.map(x=>`<option>${x}</option>`).join('')}['account','setAccount','from'].forEach(id=>options(id,names));options('to',names);
+const SUPABASE_URL='https://gpkjqsooaiofsxfddnwt.supabase.co';
+const SUPABASE_KEY='sb_publishable_v0S0uRqNp_M0NMlcSKQCFg_K5YcoYI0';
+const supabase=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+
+const names=['現金','PayPay','キャンパスペイ','銀行口座'];
+const cats=['食費','交通費','買い物','娯楽','学費・教材','その他'];
+const key='moneynote_v3';
+
+function emptyData(){
+ return {balances:Object.fromEntries(names.map(n=>[n,0])),items:[]};
+}
+
+function cleanData(data){
+ if(!data||!data.balances||!Array.isArray(data.items))return emptyData();
+ const balances={};
+ names.forEach(n=>{
+  const v=data.balances[n];
+  balances[n]=typeof v==='number'&&Number.isFinite(v)?v:0;
+ });
+ return {balances,items:data.items};
+}
+
+let d;
+try{d=cleanData(JSON.parse(localStorage.getItem(key)))}catch(e){d=emptyData()}
+
+let currentUser=null;
+let saveQueue=Promise.resolve();
 let mode='expense';
-function render(){$('accounts').innerHTML=names.map((n,i)=>`<div class="card"><div class="muted">${['財布','電子マネー','学内決済','口座'][i]}</div><b>${n}</b><div class="balance">${money(d.balances[n])}</div></div>`).join('');$('total').textContent=money(names.reduce((s,n)=>s+d.balances[n],0));let a=[...d.items].reverse();$('history').innerHTML=a.length?a.map(x=>`<div class="item"><div class="desc"><b>${safe(x.title)}</b><div class="meta">${safe(x.date)} ・ ${safe(x.account)}${x.memo?' ・ '+safe(x.memo):''}</div></div><span class="amt ${x.type==='income'?'in':x.type==='expense'?'out':''}">${x.type==='income'?'+':x.type==='expense'?'-':''}${money(x.amount)}</span><button class="secondary" data-del="${x.id}">削除</button></div>`).join(''):'<div class="empty">まだ取引はありません</div>'}
-function save(){localStorage.setItem(key,JSON.stringify(d));render()}
-function setMode(m){mode=m;document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===m));$('normal').classList.toggle('hidden',m==='transfer');$('transfer').classList.toggle('hidden',m!=='transfer');$('category').innerHTML=(m==='income'?['給料','お小遣い','返金','その他']:cats).map(x=>`<option>${x}</option>`).join('');$('save').textContent=m==='transfer'?'振替を記録する':'記録する'}
+let loading=false;
+
+const $=id=>document.getElementById(id);
+const money=n=>'¥'+Math.round(n).toLocaleString('ja-JP');
+const safe=s=>String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function message(s){$('authMessage').textContent=s}
+
+function options(id,arr){
+ $(id).innerHTML=arr.map(x=>`<option>${x}</option>`).join('');
+}
+['account','setAccount','from'].forEach(id=>options(id,names));
+options('to',names);
+
+function render(){
+ $('accounts').innerHTML=names.map((n,i)=>`
+ <div class="card">
+ <div class="muted">${['財布','電子マネー','学内決済','口座'][i]}</div>
+ <b>${n}</b>
+ <div class="balance">${money(d.balances[n])}</div>
+ </div>`).join('');
+
+ $('total').textContent=money(names.reduce((s,n)=>s+d.balances[n],0));
+
+ let a=[...d.items].reverse();
+ $('history').innerHTML=a.length?a.map(x=>`
+ <div class="item">
+ <div class="desc">
+ <b>${safe(x.title)}</b>
+ <div class="meta">${safe(x.date)} ・ ${safe(x.account)}${x.memo?' ・ '+safe(x.memo):''}</div>
+ </div>
+ <span class="amt ${x.type==='income'?'in':x.type==='expense'?'out':''}">
+ ${x.type==='income'?'+':x.type==='expense'?'-':''}${money(x.amount)}
+ </span>
+ <button class="secondary" data-del="${safe(x.id)}">削除</button>
+ </div>`).join(''):'<div class="empty">まだ取引はありません</div>';
+}
+
+async function save(){
+ localStorage.setItem(key,JSON.stringify(d));
+ render();
+
+ if(!currentUser)return;
+
+ const snapshot=JSON.parse(JSON.stringify(d));
+ const userId=currentUser.id;
+
+ saveQueue=saveQueue.then(async()=>{
+  const {error}=await supabase.from('money_data').upsert({
+   user_id:userId,
+   data:snapshot,
+   updated_at:new Date().toISOString()
+  });
+  if(error)throw error;
+ });
+
+ try{
+  await saveQueue;
+  if(currentUser&&currentUser.id===userId)$('syncStatus').textContent='クラウドに保存済み';
+ }catch(e){
+  console.error(e);
+  $('syncStatus').textContent='同期エラー：通信状態を確認してね';
+ }
+}
+
+async function loadCloudData(user){
+ loading=true;
+ $('syncStatus').textContent='データを読み込み中...';
+
+ const {data,error}=await supabase
+  .from('money_data')
+  .select('data')
+  .eq('user_id',user.id)
+  .maybeSingle();
+
+ if(error){
+  loading=false;
+  $('syncStatus').textContent='読み込みエラー';
+  message('データを読み込めなかったよ。もう一度ログインしてね。');
+  console.error(error);
+  await supabase.auth.signOut();
+  return;
+ }
+
+ if(data){
+  d=cleanData(data.data);
+ }else{
+  let local;
+  try{local=cleanData(JSON.parse(localStorage.getItem(key)))}catch(e){local=emptyData()}
+  d=local;
+  const {error:insertError}=await supabase.from('money_data').insert({
+   user_id:user.id,
+   data:d
+  });
+  if(insertError){
+   loading=false;
+   $('syncStatus').textContent='初回保存に失敗';
+   console.error(insertError);
+   message('初回データ保存に失敗したよ。もう一度試してね。');
+   await supabase.auth.signOut();
+   return;
+  }
+ }
+
+ currentUser=user;
+ localStorage.setItem(key,JSON.stringify(d));
+ render();
+ document.body.classList.add('logged-in');
+ $('syncStatus').textContent='クラウドと同期済み';
+ loading=false;
+}
+
+async function handleSession(session){
+ if(session){
+  await loadCloudData(session.user);
+ }else{
+  currentUser=null;
+  document.body.classList.remove('logged-in');
+  $('syncStatus').textContent='ログインしてね';
+ }
+}
+
+$('signup').onclick=async()=>{
+ const email=$('email').value.trim();
+ const password=$('password').value;
+ if(!email||!password)return message('メールアドレスとパスワードを入力してね');
+ if(password.length<6)return message('パスワードは6文字以上にしてね');
+
+ $('signup').disabled=true;
+ message('新規登録中...');
+
+ const {data,error}=await supabase.auth.signUp({email,password});
+ $('signup').disabled=false;
+
+ if(error)return message('登録できなかったよ：'+error.message);
+
+ if(data.session){
+  message('登録できたよ！');
+  await handleSession(data.session);
+ }else{
+  message('確認メールを送ったよ。メール内のリンクを開いてからログインしてね。');
+ }
+};
+
+$('login').onclick=async()=>{
+ const email=$('email').value.trim();
+ const password=$('password').value;
+ if(!email||!password)return message('メールアドレスとパスワードを入力してね');
+
+ $('login').disabled=true;
+ message('ログイン中...');
+
+ const {data,error}=await supabase.auth.signInWithPassword({email,password});
+ $('login').disabled=false;
+
+ if(error)return message('ログインできなかったよ：'+error.message);
+ await handleSession(data.session);
+};
+
+$('logout').onclick=async()=>{
+ if(!confirm('ログアウトする？'))return;
+ await supabase.auth.signOut();
+};
+
+supabase.auth.onAuthStateChange((event,session)=>{
+ setTimeout(()=>handleSession(session),0);
+});
+
+(async()=>{
+ const {data,error}=await supabase.auth.getSession();
+ if(error){
+  message('ログイン状態を確認できなかったよ');
+  return;
+ }
+ await handleSession(data.session);
+})();
+
+function setMode(m){
+ mode=m;
+ document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===m));
+ $('normal').classList.toggle('hidden',m==='transfer');
+ $('transfer').classList.toggle('hidden',m!=='transfer');
+ $('category').innerHTML=(m==='income'?['給料','お小遣い','返金','その他']:cats).map(x=>`<option>${x}</option>`).join('');
+ $('save').textContent=m==='transfer'?'振替を記録する':'記録する';
+}
+
 document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
-$('save').onclick=()=>{let transfer=mode==='transfer',v=Number($(transfer?'tamount':'amount').value);if(!Number.isFinite(v)||v<=0)return alert('1円以上の金額を入力してね');let account,memo,title;if(transfer){let f=$('from').value,t=$('to').value;if(f===t)return alert('移動元と移動先を別々に選んでね');if(d.balances[f]<v&&!confirm('移動元の残高が足りないよ。それでも記録する？'))return;d.balances[f]-=v;d.balances[t]+=v;account=f+' → '+t;memo=$('tmemo').value;title='口座間振替'}else{account=$('account').value;memo=$('memo').value;title=(mode==='income'?'収入：':'支出：')+$('category').value;d.balances[account]+=mode==='income'?v:-v}d.items.push({id:Date.now()+Math.random(),type:mode,amount:v,account,memo,title,date:new Date().toLocaleDateString('ja-JP')});['amount','tamount','memo','tmemo'].forEach(id=>$(id).value='');save()};
-$('set').onclick=()=>{let a=$('setAccount').value,v=Number($('setBalance').value);if(!Number.isFinite(v)||v<0)return alert('0円以上の残高を入力してね');d.balances[a]=v;$('setBalance').value='';save()};
-$('history').onclick=e=>{let id=e.target.dataset.del;if(!id)return;let i=d.items.findIndex(x=>String(x.id)===id);if(i<0)return;let x=d.items[i];if(x.type==='income')d.balances[x.account]-=x.amount;else if(x.type==='expense')d.balances[x.account]+=x.amount;else{let [f,t]=x.account.split(' → ');d.balances[f]+=x.amount;d.balances[t]-=x.amount}d.items.splice(i,1);save()};
-$('reset').onclick=()=>{if(!confirm('残高と履歴をすべて削除するよ。いい？'))return;d={balances:Object.fromEntries(names.map(n=>[n,0])),items:[]};save()};
+
+$('save').onclick=async()=>{
+ if(!currentUser||loading)return alert('ログインしてね');
+
+ let transfer=mode==='transfer';
+ let v=Number($(transfer?'tamount':'amount').value);
+ if(!Number.isFinite(v)||v<=0)return alert('1円以上の金額を入力してね');
+
+ let account,memo,title;
+
+ if(transfer){
+  let f=$('from').value,t=$('to').value;
+  if(f===t)return alert('移動元と移動先を別々に選んでね');
+  if(d.balances[f]<v&&!confirm('移動元の残高が足りないよ。それでも記録する？'))return;
+  d.balances[f]-=v;
+  d.balances[t]+=v;
+  account=f+' → '+t;
+  memo=$('tmemo').value;
+  title='口座間振替';
+ }else{
+  account=$('account').value;
+  memo=$('memo').value;
+  title=(mode==='income'?'収入：':'支出：')+$('category').value;
+  d.balances[account]+=mode==='income'?v:-v;
+ }
+
+ d.items.push({
+  id:Date.now()+Math.random(),
+  type:mode,
+  amount:v,
+  account,memo,title,
+  date:new Date().toLocaleDateString('ja-JP')
+ });
+
+ ['amount','tamount','memo','tmemo'].forEach(id=>$(id).value='');
+ await save();
+};
+
+$('set').onclick=async()=>{
+ if(!currentUser||loading)return alert('ログインしてね');
+ let a=$('setAccount').value,v=Number($('setBalance').value);
+ if(!Number.isFinite(v)||v<0)return alert('0円以上の残高を入力してね');
+ d.balances[a]=v;
+ $('setBalance').value='';
+ await save();
+};
+
+$('history').onclick=async e=>{
+ let id=e.target.dataset.del;
+ if(!id||!currentUser||loading)return;
+ let i=d.items.findIndex(x=>String(x.id)===id);
+ if(i<0)return;
+ let x=d.items[i];
+ if(x.type==='income')d.balances[x.account]-=x.amount;
+ else if(x.type==='expense')d.balances[x.account]+=x.amount;
+ else{
+  let [f,t]=x.account.split(' → ');
+  d.balances[f]+=x.amount;
+  d.balances[t]-=x.amount;
+ }
+ d.items.splice(i,1);
+ await save();
+};
+
+$('reset').onclick=async()=>{
+ if(!currentUser||loading)return;
+ if(!confirm('残高と履歴をすべて削除するよ。いい？'))return;
+ d=emptyData();
+ await save();
+};
 
 $('backup').onclick=()=>{
-  try{
-    const payload={app:'MoneyNote',version:1,createdAt:new Date().toISOString(),data:d};
-    const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');
-    a.href=url;
-    a.download='MoneyNote-backup-'+new Date().toISOString().slice(0,10)+'.json';
-    document.body.appendChild(a);a.click();a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),1000);
-    alert('バックアップを保存したよ！ダウンロードフォルダを確認してね。');
-  }catch(e){alert('バックアップを作成できなかったよ。もう一度試してね。');}
-};
-$('restore').onclick=async()=>{
-  const file=$('restoreFile').files[0];
-  if(!file){alert('先にバックアップファイルを選んでね');return;}
-  try{
-    const raw=JSON.parse(await file.text());
-    const imported=raw&&raw.app==='MoneyNote'&&raw.data?raw.data:null;
-    if(!imported||!imported.balances||!Array.isArray(imported.items))throw new Error('invalid');
-    const cleanBalances={};
-    for(const n of names){
-      const v=imported.balances[n];
-      if(typeof v!=='number'||!Number.isFinite(v))throw new Error('balance');
-      cleanBalances[n]=v;
-    }
-    const cleanItems=imported.items.map(x=>{
-      if(!x||!['income','expense','transfer'].includes(x.type)||
-         typeof x.amount!=='number'||!Number.isFinite(x.amount)||x.amount<=0||
-         x.id===undefined||typeof x.account!=='string')throw new Error('item');
-      return {id:x.id,type:x.type,amount:x.amount,account:x.account,
-        memo:String(x.memo||''),title:String(x.title||''),date:String(x.date||'')};
-    });
-    if(!confirm('バックアップの内容で現在の残高と取引履歴を置き換えるよ。続ける？\\nできれば先に現在のデータもバックアップしてね。'))return;
-    d={balances:cleanBalances,items:cleanItems};
-    save();
-    $('restoreFile').value='';
-    alert('復元できたよ！');
-  }catch(e){alert('このファイルはMoneyNoteの有効なバックアップではないみたい。ファイルを確認してね。');}
+ try{
+  const payload={app:'MoneyNote',version:1,createdAt:new Date().toISOString(),data:d};
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download='MoneyNote-backup-'+new Date().toISOString().slice(0,10)+'.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  alert('バックアップを保存したよ！');
+ }catch(e){
+  alert('バックアップを作成できなかったよ。');
+ }
 };
 
-setMode('expense');render();
-</script><script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(console.error));}</script></body></html>
+$('restore').onclick=async()=>{
+ if(!currentUser||loading)return alert('ログインしてね');
+ const file=$('restoreFile').files[0];
+ if(!file)return alert('先にバックアップファイルを選んでね');
+
+ try{
+  const raw=JSON.parse(await file.text());
+  const imported=raw&&raw.app==='MoneyNote'&&raw.data?raw.data:null;
+  if(!imported||!imported.balances||!Array.isArray(imported.items))throw new Error('invalid');
+
+  const cleanBalances={};
+  for(const n of names){
+   const v=imported.balances[n];
+   if(typeof v!=='number'||!Number.isFinite(v))throw new Error('balance');
+   cleanBalances[n]=v;
+  }
+
+  const cleanItems=imported.items.map(x=>{
+   if(!x||!['income','expense','transfer'].includes(x.type)||
+    typeof x.amount!=='number'||!Number.isFinite(x.amount)||x.amount<=0||
+    x.id===undefined||typeof x.account!=='string')throw new Error('item');
+   return {id:x.id,type:x.type,amount:x.amount,account:x.account,
+    memo:String(x.memo||''),title:String(x.title||''),date:String(x.date||'')};
+  });
+
+  if(!confirm('バックアップの内容で現在の残高と取引履歴を置き換えるよ。続ける？'))return;
+
+  d={balances:cleanBalances,items:cleanItems};
+  await save();
+  $('restoreFile').value='';
+  alert('復元できたよ！');
+ }catch(e){
+  alert('このファイルはMoneyNoteの有効なバックアップではないみたい。');
+ }
+};
+
+setMode('expense');
+render();
+</script>
+
+<script>
+if('serviceWorker' in navigator){
+ window.addEventListener('load',()=>{
+  navigator.serviceWorker.register('./sw.js').catch(console.error);
+ });
+}
+</script>
+
+</body>
+</html>
